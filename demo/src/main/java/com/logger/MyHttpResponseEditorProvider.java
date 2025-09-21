@@ -113,44 +113,7 @@ class MyHttpResponseEditorProvider implements HttpResponseEditorProvider {
                 responseEditor.setSyntaxScheme(scheme);
             } catch (Exception e) {
                 api.logging().logToError("自定义语法高亮失败: " + e.getMessage());
-            }
-            
-            // 添加鼠标双击选中文本功能
-            responseEditor.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseClicked(MouseEvent e) {
-                    if (e.getClickCount() == 2) {
-                        int pos = responseEditor.getCaretPosition();
-                        try {
-                            int start = getWordStart(responseEditor, pos);
-                        } catch (javax.swing.text.BadLocationException ex) {
-                            api.logging().logToError("获取单词起始位置失败: " + ex.getMessage());
-                            return;
-                        }
-                        try {
-                            int end = getWordEnd(responseEditor, pos);
-                        } catch (javax.swing.text.BadLocationException ex) {
-                            api.logging().logToError("获取单词结束位置失败: " + ex.getMessage());
-                            return;
-                        }
-                        try {
-                            int start = getWordStart(responseEditor, pos);
-                            responseEditor.setSelectionStart(start);
-                        } catch (javax.swing.text.BadLocationException ex) {
-                            api.logging().logToError("获取单词起始位置失败: " + ex.getMessage());
-                            return;
-                        }
-try {
-    int end = getWordEnd(responseEditor, pos);
-    responseEditor.setSelectionEnd(end);
-} catch (javax.swing.text.BadLocationException ex) {
-    api.logging().logToError("获取单词结束位置失败: " + ex.getMessage());
-    return;
-}
-                    }
-                }
-            });
-            
+            }            
             scrollPane = new RTextScrollPane(responseEditor);
             scrollPane.setFoldIndicatorEnabled(true);
             
