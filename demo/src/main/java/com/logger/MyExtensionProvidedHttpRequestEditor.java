@@ -21,8 +21,6 @@ import burp.api.montoya.ui.editor.extension.EditorMode;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedHttpRequestEditor;
 import static burp.api.montoya.core.ByteArray.byteArray;
 import java.awt.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

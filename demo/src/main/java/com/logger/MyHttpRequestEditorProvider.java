@@ -22,31 +22,13 @@ import burp.api.montoya.ui.editor.extension.EditorMode;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedHttpRequestEditor;
 import burp.api.montoya.ui.editor.extension.HttpRequestEditorProvider;
 import javax.swing.*;
-import javax.swing.text.DefaultEditorKit;
-import javax.swing.text.TextAction;
-import javax.swing.text.AttributeSet;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.Document;
-import javax.swing.text.DocumentFilter;
-import javax.swing.text.AbstractDocument;
 import javax.swing.text.JTextComponent;
 import java.awt.*;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.StringSelection;
-import java.awt.datatransfer.Transferable;
-import java.awt.event.ActionEvent;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Objects;
 import java.util.function.Supplier;
-
-import javax.swing.AbstractAction;
-import javax.swing.KeyStroke;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
@@ -89,6 +71,7 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
         private final EditorMode editorMode;
         private final MontoyaApi api;
         private boolean isUpdating = false; // 防止无限循环的标志
+        private int lastCaretPosition = 0; // 保存上次光标位置
 
         // 用于检测不同内容类型的正则表达式
         private final Pattern XML_PATTERN = Pattern.compile("<\\?xml.*?\\?>", Pattern.DOTALL);
@@ -372,6 +355,8 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             if (requestResponse != null && customTextArea != null) {
                 try {
                     isUpdating = true;
+                    // 保存当前光标位置，添加1以确保准确恢复
+                    lastCaretPosition = customTextArea.getCaretPosition() + 1;
                     String content = customTextArea.getText();
                     if (content != null) {
                         // 使用RawEditor的setContents方法设置内容，确保UTF-8编码
@@ -533,8 +518,10 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             // 设置内容到Burp的编辑器，使用RawEditor的setContents方法
             requestEditor.setContents(body);
             
-            // 滚动到开头
-            customTextArea.setCaretPosition(0);
+            // 恢复上次光标位置，如果超出了新内容的长度，则设置到内容末尾
+            // 添加1来确保光标准确回到原来的位置
+            int targetPosition = Math.min(lastCaretPosition, customTextArea.getDocument().getLength());
+            customTextArea.setCaretPosition(targetPosition);
         }
         
         /**

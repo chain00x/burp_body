@@ -356,7 +356,7 @@ try {
         
         @Override
         public String caption() {
-            return "Body with Highlight";
+            return "Body";
         }
         
         @Override
