@@ -355,8 +355,8 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             if (requestResponse != null && customTextArea != null) {
                 try {
                     isUpdating = true;
-                    // 保存当前光标位置，添加1以确保准确恢复
-                    lastCaretPosition = customTextArea.getCaretPosition() + 1;
+                    // 保存当前光标位置
+                    lastCaretPosition = customTextArea.getCaretPosition();
                     String content = customTextArea.getText();
                     if (content != null) {
                         // 使用RawEditor的setContents方法设置内容，确保UTF-8编码
@@ -518,9 +518,11 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             // 设置内容到Burp的编辑器，使用RawEditor的setContents方法
             requestEditor.setContents(body);
             
-            // 恢复上次光标位置，如果超出了新内容的长度，则设置到内容末尾
-            // 添加1来确保光标准确回到原来的位置
-            int targetPosition = Math.min(lastCaretPosition, customTextArea.getDocument().getLength());
+            // 智能恢复光标位置
+            // 如果删除了字符，需要根据内容长度变化调整光标位置
+            int documentLength = customTextArea.getDocument().getLength();
+            // 确保光标位置不会超出文档长度，同时保持在合理范围内
+            int targetPosition = Math.min(Math.max(0, lastCaretPosition), documentLength);
             customTextArea.setCaretPosition(targetPosition);
         }
         
