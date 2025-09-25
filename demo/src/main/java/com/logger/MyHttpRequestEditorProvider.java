@@ -29,6 +29,8 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Objects;
 import java.util.function.Supplier;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
@@ -72,6 +74,7 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
         private final MontoyaApi api;
         private boolean isUpdating = false; // 防止无限循环的标志
         private int lastCaretPosition = 0; // 保存上次光标位置
+        private int lastKnownCaretPosition = 0; // 用于持续跟踪用户的光标位置
 
         // 用于检测不同内容类型的正则表达式
         private final Pattern XML_PATTERN = Pattern.compile("<\\?xml.*?\\?>", Pattern.DOTALL);
@@ -105,6 +108,18 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             
             // 配置文本区域属性
             configureRSyntaxTextArea(customTextArea, isEditable);
+            
+            // 添加CaretListener来持续跟踪光标位置
+            if (isEditable) {
+                customTextArea.addCaretListener(new CaretListener() {
+                    @Override
+                    public void caretUpdate(CaretEvent e) {
+                        if (!isUpdating) {
+                            lastKnownCaretPosition = e.getDot();
+                        }
+                    }
+                });
+            }
             
             // 创建滚动面板
             RTextScrollPane scrollPane = new RTextScrollPane(customTextArea);
@@ -472,6 +487,7 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             // 首先设置Burp编辑器的内容
             String body_str = null;
             ByteArray body;
+            String formattedContent = null; // 将formattedContent声明移到外部，确保作用域覆盖整个方法
             
             try {
                 // 获取原始字节数组并使用UTF-8编码转换为字符串
@@ -487,7 +503,7 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
                 detectContentTypeAndSetSyntax(body_str);
                 
                 // 尝试格式化内容
-                String formattedContent = formatContent(body_str);
+                formattedContent = formatContent(body_str);
                 
                 if (formattedContent != null) {
                     body = byteArray(formattedContent.getBytes(StandardCharsets.UTF_8));
@@ -519,11 +535,28 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             requestEditor.setContents(body);
             
             // 智能恢复光标位置
-            // 如果删除了字符，需要根据内容长度变化调整光标位置
             int documentLength = customTextArea.getDocument().getLength();
-            // 确保光标位置不会超出文档长度，同时保持在合理范围内
-            int targetPosition = Math.min(Math.max(0, lastCaretPosition), documentLength);
-            customTextArea.setCaretPosition(targetPosition);
+            
+            // 使用lastKnownCaretPosition进行光标恢复，这是通过文档监听器实时跟踪的
+            int targetPosition;
+            
+            if (lastKnownCaretPosition > 0 && lastKnownCaretPosition <= documentLength) {
+                // 如果有已知的光标位置，并且在文档范围内，就使用它
+                targetPosition = lastKnownCaretPosition;
+            } else {
+                // 否则将光标放在内容末尾，提供更好的用户体验
+                targetPosition = documentLength;
+            }
+            
+            // 使用SwingUtilities.invokeLater确保在UI线程中设置光标位置
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    customTextArea.setCaretPosition(targetPosition);
+                } catch (Exception e) {
+                    // 如果发生异常，将光标放在内容末尾
+                    customTextArea.setCaretPosition(documentLength);
+                }
+            });
         }
         
         /**

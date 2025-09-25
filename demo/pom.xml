@@ -39,46 +39,26 @@
         <repository>
             <id>alimaven</id>
             <name>aliyun maven</name>
-            <url>http://maven.aliyun.com/nexus/content/groups/public/</url>
+            <url>https://maven.aliyun.com/nexus/content/groups/public/</url>
         </repository>
         <repository>
-            <id>uk</id>
-            <name>Human Readable Name for this Mirror.</name>
-            <url>http://uk.maven.org/maven2/</url>
-        </repository>
-        <repository>
-            <id>CN</id>
-            <name>OSChina Central</name>
-            <url>http://maven.oschina.net/content/groups/public/</url>
-        </repository>
-        <repository>
-            <id>nexus</id>
-            <name>internal nexus repository</name>
-            <url>http://repo.maven.apache.org/maven2</url>
+            <id>central</id>
+            <name>Maven Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
         </repository>
     </repositories>
 
-    <!-- 添加mirrors配置到pom.xml -->
+    <!-- 添加pluginRepositories配置 -->
     <pluginRepositories>
         <pluginRepository>
             <id>alimaven</id>
             <name>aliyun maven</name>
-            <url>http://maven.aliyun.com/nexus/content/groups/public/</url>
+            <url>https://maven.aliyun.com/nexus/content/groups/public/</url>
         </pluginRepository>
         <pluginRepository>
-            <id>uk</id>
-            <name>Human Readable Name for this Mirror.</name>
-            <url>http://uk.maven.org/maven2/</url>
-        </pluginRepository>
-        <pluginRepository>
-            <id>CN</id>
-            <name>OSChina Central</name>
-            <url>http://maven.oschina.net/content/groups/public/</url>
-        </pluginRepository>
-        <pluginRepository>
-            <id>nexus</id>
-            <name>internal nexus repository</name>
-            <url>http://repo.maven.apache.org/maven2</url>
+            <id>central</id>
+            <name>Maven Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
         </pluginRepository>
     </pluginRepositories>
 
