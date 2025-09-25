@@ -22,8 +22,14 @@ import burp.api.montoya.ui.editor.extension.EditorMode;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedHttpRequestEditor;
 import burp.api.montoya.ui.editor.extension.HttpRequestEditorProvider;
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter;
 import javax.swing.text.JTextComponent;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -75,6 +81,18 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
         private boolean isUpdating = false; // 防止无限循环的标志
         private int lastCaretPosition = 0; // 保存上次光标位置
         private int lastKnownCaretPosition = 0; // 用于持续跟踪用户的光标位置
+        
+        // 添加搜索和高亮相关组件
+        private JTextField searchField;
+        private JButton prevButton;
+        private JButton nextButton;
+        private JLabel statusLabel;
+        private JPanel searchPanel;
+        private Highlighter.HighlightPainter highlightPainter;
+        private int currentMatchIndex = -1;
+        private java.util.List<Object> currentHighlights = new java.util.ArrayList<>();
+        private javax.swing.Timer searchTimer;
+        private java.util.List<int[]> matchPositions = new java.util.ArrayList<>();
 
         // 用于检测不同内容类型的正则表达式
         private final Pattern XML_PATTERN = Pattern.compile("<\\?xml.*?\\?>", Pattern.DOTALL);
@@ -121,6 +139,9 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
                 });
             }
             
+            // 初始化高亮画笔
+            highlightPainter = new DefaultHighlighter.DefaultHighlightPainter(Color.YELLOW);
+            
             // 创建滚动面板
             RTextScrollPane scrollPane = new RTextScrollPane(customTextArea);
             scrollPane.setFoldIndicatorEnabled(true);
@@ -129,9 +150,13 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             scrollPane.setFocusable(true);
             scrollPane.setEnabled(true);
             
+            // 创建搜索面板
+            createSearchPanel();
+            
             // 创建主面板
             mainPanel = new JPanel(new BorderLayout());
             mainPanel.add(scrollPane, BorderLayout.CENTER);
+            mainPanel.add(searchPanel, BorderLayout.SOUTH);
             mainPanel.setFocusable(true);
             mainPanel.setEnabled(true);
             
@@ -166,6 +191,186 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
                     }
                 });
             }
+        }
+        
+        /**
+         * 创建搜索面板
+         */
+        private void createSearchPanel() {
+            searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            searchPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
+            
+            JLabel searchLabel = new JLabel("Search:");
+            searchField = new JTextField(20);
+            prevButton = new JButton("Prev");
+            nextButton = new JButton("Next");
+            statusLabel = new JLabel("   0 matches");
+            
+            searchPanel.add(searchLabel);
+            searchPanel.add(searchField);
+            searchPanel.add(prevButton);
+            searchPanel.add(nextButton);
+            searchPanel.add(statusLabel);
+            
+            // 添加搜索延迟，避免用户输入时频繁搜索
+            searchTimer = new javax.swing.Timer(300, new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    search(searchField.getText());
+                }
+            });
+            searchTimer.setRepeats(false);
+            
+            // 添加文档监听器，当搜索框内容变化时触发搜索
+            searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                @Override
+                public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                    searchTimer.restart();
+                }
+                
+                @Override
+                public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                    searchTimer.restart();
+                }
+                
+                @Override
+                public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                    searchTimer.restart();
+                }
+            });
+            
+            // 添加上下搜索按钮的点击事件
+            prevButton.addActionListener(new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    navigateToPreviousMatch();
+                }
+            });
+            
+            nextButton.addActionListener(new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    navigateToNextMatch();
+                }
+            });
+            
+            // 添加键盘快捷键支持
+            searchField.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "searchNext");
+            searchField.getActionMap().put("searchNext", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    navigateToNextMatch();
+                }
+            });
+            
+            searchField.getInputMap().put(KeyStroke.getKeyStroke("shift ENTER"), "searchPrev");
+            searchField.getActionMap().put("searchPrev", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    navigateToPreviousMatch();
+                }
+            });
+        }
+        
+        // 滚动到高亮位置
+        private void scrollToHighlight(int start, int end) {
+            customTextArea.setCaretPosition(start);
+            customTextArea.select(start, end);
+            try {
+                customTextArea.scrollRectToVisible(customTextArea.modelToView(start));
+            } catch (javax.swing.text.BadLocationException e) {
+                api.logging().logToError("滚动到高亮位置失败: " + e.getMessage());
+            }
+        }
+        
+        // 清除所有高亮
+        private void clearHighlights() {
+            Highlighter highlighter = customTextArea.getHighlighter();
+            for (Object highlightTag : currentHighlights) {
+                highlighter.removeHighlight(highlightTag);
+            }
+            currentHighlights.clear();
+            matchPositions.clear();
+        }
+        
+        // 实现搜索功能
+        private void search(String searchText) {
+            if (searchText == null || searchText.trim().isEmpty()) {
+                clearHighlights();
+                statusLabel.setText("   0 matches");
+                currentMatchIndex = -1;
+                return;
+            }
+            
+            try {
+                clearHighlights();
+                String content = customTextArea.getText();
+                Pattern pattern = Pattern.compile(Pattern.quote(searchText), Pattern.CASE_INSENSITIVE);
+                Matcher matcher = pattern.matcher(content);
+                
+                int matchCount = 0;
+                // 存储所有匹配位置
+                java.util.List<int[]> matchPositions = new java.util.ArrayList<>();
+                
+                while (matcher.find()) {
+                    int start = matcher.start();
+                    int end = matcher.end();
+                    Object highlightTag = customTextArea.getHighlighter().addHighlight(start, end, highlightPainter);
+                    currentHighlights.add(highlightTag);
+                    matchPositions.add(new int[]{start, end});
+                    matchCount++;
+                }
+                
+                statusLabel.setText(String.format("   %d matches", matchCount));
+                currentMatchIndex = matchCount > 0 ? 0 : -1;
+                
+                // 如果有匹配项，滚动到第一个匹配项
+                if (matchCount > 0) {
+                    int[] firstMatch = matchPositions.get(0);
+                    scrollToHighlight(firstMatch[0], firstMatch[1]);
+                }
+                
+                // 保存匹配位置用于导航
+                this.matchPositions = matchPositions;
+            } catch (Exception e) {
+                api.logging().logToError("搜索失败: " + e.getMessage());
+            }
+        }
+        
+        // 导航到上一个匹配项
+        private void navigateToPreviousMatch() {
+            if (matchPositions.isEmpty()) {
+                return;
+            }
+            
+            currentMatchIndex--;
+            if (currentMatchIndex < 0) {
+                currentMatchIndex = matchPositions.size() - 1;
+            }
+            
+            int[] match = matchPositions.get(currentMatchIndex);
+            scrollToHighlight(match[0], match[1]);
+            
+            // 更新状态栏显示当前匹配项
+            statusLabel.setText(String.format("   %d/%d", currentMatchIndex + 1, matchPositions.size()));
+        }
+        
+        // 导航到下一个匹配项
+        private void navigateToNextMatch() {
+            if (matchPositions.isEmpty()) {
+                return;
+            }
+            
+            currentMatchIndex++;
+            if (currentMatchIndex >= matchPositions.size()) {
+                currentMatchIndex = 0;
+            }
+            
+            int[] match = matchPositions.get(currentMatchIndex);
+            scrollToHighlight(match[0], match[1]);
+            
+            // 更新状态栏显示当前匹配项
+            statusLabel.setText(String.format("   %d/%d", currentMatchIndex + 1, matchPositions.size()));
         }
         
         /**
@@ -514,12 +719,25 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
                 }
                 
                 // 防止触发文档监听器
-                try {
-                    isUpdating = true;
-                    customTextArea.setText(formattedContent != null ? formattedContent : body_str);
-                } finally {
-                    isUpdating = false;
+            try {
+                isUpdating = true;
+                // 先保存要设置的内容
+                String contentToSet = formattedContent != null ? formattedContent : body_str;
+                // 直接设置内容并立即设置光标位置，避免闪烁
+                customTextArea.setText(contentToSet);
+                // 立即设置光标位置，不使用SwingUtilities.invokeLater
+                int documentLength = customTextArea.getDocument().getLength();
+                if (lastKnownCaretPosition > 0 && lastKnownCaretPosition <= documentLength) {
+                    try {
+                        customTextArea.setCaretPosition(lastKnownCaretPosition);
+                    } catch (Exception e) {
+                        // 如果发生异常，将光标放在内容末尾
+                        customTextArea.setCaretPosition(documentLength);
+                    }
                 }
+            } finally {
+                isUpdating = false;
+            }
             } else {
                 body = byteArray("");
                 
@@ -534,29 +752,13 @@ public class MyHttpRequestEditorProvider implements HttpRequestEditorProvider {
             // 设置内容到Burp的编辑器，使用RawEditor的setContents方法
             requestEditor.setContents(body);
             
-            // 智能恢复光标位置
-            int documentLength = customTextArea.getDocument().getLength();
+            // 清除搜索高亮
+            customTextArea.getHighlighter().removeAllHighlights();
+            statusLabel.setText("   0 matches");
+            searchField.setText("");
             
-            // 使用lastKnownCaretPosition进行光标恢复，这是通过文档监听器实时跟踪的
-            int targetPosition;
-            
-            if (lastKnownCaretPosition > 0 && lastKnownCaretPosition <= documentLength) {
-                // 如果有已知的光标位置，并且在文档范围内，就使用它
-                targetPosition = lastKnownCaretPosition;
-            } else {
-                // 否则将光标放在内容末尾，提供更好的用户体验
-                targetPosition = documentLength;
-            }
-            
-            // 使用SwingUtilities.invokeLater确保在UI线程中设置光标位置
-            SwingUtilities.invokeLater(() -> {
-                try {
-                    customTextArea.setCaretPosition(targetPosition);
-                } catch (Exception e) {
-                    // 如果发生异常，将光标放在内容末尾
-                    customTextArea.setCaretPosition(documentLength);
-                }
-            });
+            // 光标位置已在设置文本内容时直接设置，无需再次恢复
+            // 这样可以避免两次设置光标位置导致的闪烁问题
         }
         
         /**
